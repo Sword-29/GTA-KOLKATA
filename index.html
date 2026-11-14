@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>GTA Kolkata v0.2</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;overflow:hidden;background:#91b9ce;color:white;font-family:Arial}
+canvas{display:block}
+#hud{position:fixed;inset:0;pointer-events:none}
+.panel{background:#101820dd;border:1px solid #ffffff44;border-radius:10px;padding:10px}
+#brand{position:absolute;top:12px;left:12px;color:#ffce42;font-size:19px;font-weight:900}
+#place{position:absolute;top:46px;left:12px;font-size:11px}
+#mission{position:absolute;top:12px;right:12px;font-size:12px;width:175px}
+#stats{position:absolute;right:12px;bottom:12px;font-size:12px}
+#map{position:absolute;top:88px;right:12px;width:130px;height:130px;border:2px solid white;border-radius:10px;background:#172a32dd}
+#hint{position:absolute;bottom:12px;left:12px;font-size:11px;line-height:1.7}
+#mobile{position:fixed;bottom:14px;left:0;right:0;display:none;justify-content:space-between;padding:0 12px;pointer-events:none}
+.pad{display:grid;grid-template-columns:repeat(3,49px);gap:4px;pointer-events:auto}
+.btn{height:49px;border-radius:12px;background:#152c42dd;color:white;border:1px solid #ffffff88;font-weight:bold;touch-action:none}
+#actions{display:flex;gap:6px;align-items:end;pointer-events:auto}
+#actions button{width:54px;height:54px;border-radius:50%;background:#b87d1c;color:white;border:2px solid white;font-size:12px;font-weight:bold}
+@media(max-width:750px){#mobile{display:flex}#hint{display:none}#map{width:105px;height:105px;top:82px}#mission{width:155px;font-size:11px}}
+</style>
+</head>
+<body>
+<div id="hud">
+ <div id="brand">GTA KOLKATA <small style="font-size:10px;color:white">v0.2</small></div>
+ <div id="place" class="panel">NEW TOWN • RAJARHAT</div>
+ <div id="mission" class="panel">MISSION 01<br><b>Explore Kolkata</b><br>Visit Biswa Bangla Gate</div>
+ <canvas id="map" width="260" height="260"></canvas>
+ <div id="stats" class="panel">WALKING<br>0 km/h</div>
+ <div id="hint" class="panel">WASD / ARROWS: MOVE & DRIVE<br>SHIFT: RUN · E: ENTER / EXIT<br>SPACE: BRAKE · DRAG: CAMERA</div>
+</div>
+<div id="mobile">
+ <div class="pad">
+  <span></span><button class="btn" data-k="w">▲</button><span></span>
+  <button class="btn" data-k="a">◀</button><button class="btn" data-k="s">▼</button><button class="btn" data-k="d">▶</button>
+ </div>
+ <div id="actions">
+  <button id="run">RUN</button><button id="enter">ENTER</button>
+  <button id="brake">BRAKE</button>
+ </div>
+</div>
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js';
+
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x9bc3d8);
+scene.fog=new THREE.Fog(0x9bc3d8,180,650);
+const camera=new THREE.PerspectiveCamera(65,innerWidth/innerHeight,.1,1500);
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));
+renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+renderer.toneMapping=THREE.ACESFilmicToneMapping;
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0xd8efff,0x526347,2));
+const sun=new THREE.DirectionalLight(0xffedcf,2.7);
+sun.position.set(-100,150,70);sun.castShadow=true;
+sun.shadow.mapSize.set(2048,2048);scene.add(sun);
+
+const M=c=>new THREE.MeshStandardMaterial({color:c,roughness:.9});
+const grass=M(0x668653),asphalt=M(0x30353a),pavement=M(0xb8b2a4);
+const white=M(0xf0e8d8),yellow=M(0xf2c84b),water=M(0x367f9b);
+function box(x,y,z,w,h,d,material){
+ const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),material);
+ o.position.set(x,y,z);o.castShadow=true;o.receiveShadow=true;scene.add(o);return o;
+}
+const floor=new THREE.Mesh(new THREE.PlaneGeometry(1200,1200),grass);
+floor.rotation.x=-Math.PI/2;floor.position.y=-.2;floor.receiveShadow=true;scene.add(floor);
+
+// Map coordinates: New Town west, Kestopur east
+// Major road network
+function roadX(z,width=15){box(0,-.04,z,950,.15,width,asphalt)}
+function roadZ(x,width=15){box(x,-.04,0,width,.15,950,asphalt)}
+for(let z=-390;z<=390;z+=90)roadX(z);
+for(let x=-390;x<=390;x+=90)roadZ(x);
+for(let z=-390;z<=390;z+=90){
+ for(let x=-390;x<=390;x+=90){
+  // lane dashes
+  for(let j=-35;j<=35;j+=18){
+   box(x+j,.05,z,7,.025,.18,white);
+   box(x,.05,z+j,.18,.025,7,white);
+  }
+ }
+}
+// Central New Town arterial roads
+roadX(-115,25);roadX(115,23);roadZ(-120,23);roadZ(120,23);
+
+// Kestopur canal running through eastern neighbourhood
+box(270,-.12,40,24,.3,760,water);
+for(const x of [255,285]){
+ box(x,.1,40,2,.35,760,M(0x8b9b87));
+}
+// Bridges crossing canal
+for(const z of [-260,-80,100,290]){
+ box(270,.25,z,55,.55,15,asphalt);
+ for(const x of [247,293])box(x,.65,z,1,.8,15,white);
+}
+
+// Building areas
+const palette=[0xd4c3a7,0xc5d0ce,0xd9c9b9,0xabbfc4,0xe2d4bc,0xc0b1a1,0xb7c9b4];
+function building(x,z,w,d,h,color){
+ box(x,h/2,z,w,h,d,M(color));
+ // rows of windows
+ const win=M(0x476477);
+ for(let y=2.5;y<h-1;y+=3.2){
+  for(let xx=-w/2+2;xx<w/2-1;xx+=4){
+   box(x+xx,y,z-d/2-.04,1.5,1.35,.08,win);
+  }
+ }
+}
+for(let x=-390;x<390;x+=90){
+ for(let z=-390;z<390;z+=90){
+  // New Town blocks west and Kestopur east
+  if(x>230&&x<310)continue;
+  const count=x>300?5:3;
+  for(let n=0;n<count;n++){
+   const px=x+(Math.random()-.5)*48;
+   const pz=z+(Math.random()-.5)*48;
+   const h=x>300?6+Math.random()*13:12+Math.random()*34;
+   building(px,pz,x>300?9+Math.random()*7:13+Math.random()*12,
+    x>300?10+Math.random()*8:13+Math.random()*10,h,
+    palette[Math.floor(Math.random()*palette.length)]);
+  }
+ }
+}
+// Trees and landscaped avenues
+const trunk=M(0x61452e),leaf=M(0x377449);
+function tree(x,z,s=1){
+ box(x,1.7*s,z,.5*s,3.4*s,.5*s,trunk);
+ const crown=new THREE.Mesh(new THREE.SphereGeometry(2.2*s,9,8),leaf);
+ crown.position.set(x,4*s,z);crown.castShadow=true;scene.add(crown);
+}
+for(let i=0;i<180;i++){
+ const x=(Math.random()-.5)*850,z=(Math.random()-.5)*850;
+ if(Math.abs(x%90)<12||Math.abs(z%90)<12||Math.abs(x-270)<20)continue;
+ tree(x,z,.7+Math.random()*.6);
+}
+
+// Landmark labels using canvas textures
+function label(text,x,z){
+ const c=document.createElement('canvas');c.width=512;c.height=128;
+ const ctx=c.getContext('2d');
+ ctx.fillStyle='#172c37dd';ctx.fillRect(0,0,512,128);
+ ctx.fillStyle='#ffdb68';ctx.font='bold 40px Arial';ctx.textAlign='center';
+ ctx.fillText(text,256,78);
+ const tex=new THREE.CanvasTexture(c);
+ const sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true}));
+ sprite.position.set(x,18,z);sprite.scale.set(34,8,1);scene.add(sprite);
+}
+function landmark(x,z,w,d,h,color,name){
+ building(x,z,w,d,h,color);label(name,x,z-d/2-7);
+}
+
+// Biswa Bangla Gate - stylized ring landmark
+const gate=new THREE.Group();
+const torus=new THREE.Mesh(new THREE.TorusGeometry(10,2.1,12,48),M(0xd4a94d));
+torus.rotation.x=Math.PI/2;torus.position.y=15;gate.add(torus);
+const legs=M(0xb7a27a);
+for(const x of [-8,8]){
+ const p=new THREE.Mesh(new THREE.BoxGeometry(2,15,2),legs);
+ p.position.set(x,7.5,0);gate.add(p);
+}
+gate.position.set(-125,0,-115);scene.add(gate);
+label('BISWA BANGLA GATE',-125,-135);
+
+// City Centre and mall-style landmark
+landmark(-230,-20,35,28,22,0xd4c5ac,'CITY CENTRE');
+landmark(-40,195,35,28,28,0xb7c5c8,'ACTION AREA');
+landmark(80,-250,35,30,34,0xc3b4a2,'RAJARHAT');
+
+// Eco Park and lake
+box(-265,-.05,270,180,.12,150,M(0x477a4d));
+const lake=new THREE.Mesh(new THREE.CircleGeometry(42,48),water);
+lake.rotation.x=-Math.PI/2;lake.position.set(-265,.05,270);scene.add(lake);
+for(let i=0;i<55;i++){
+ const a=Math.random()*Math.PI*2,r=50+Math.random()*32;
+ tree(-265+Math.cos(a)*r,270+Math.sin(a)*r,.8);
+}
+label('ECO PARK',-265,220);
+
+// Kestopur neighbourhood: dense houses, shops and market
+for(let x=315;x<440;x+=24){
+ for(let z=-340;z<380;z+=28){
+  if(Math.abs(z%90)<12)continue;
+  const h=5+Math.random()*9;
+  building(x+(Math.random()-.5)*5,z+(Math.random()-.5)*5,
+   13,14,h,[0xd5ad8c,0xc9b9a4,0xb9c5b4,0xd9c7b1][Math.floor(Math.random()*4)]);
+ }
+}
+landmark(355,10,25,18,12,0xd4a76f,'KESTOPUR MARKET');
+label('KESTOPUR CANAL',270,390);
+label('KESTOPUR',370,-380);
+label('NEW TOWN',-100,390);
+
+// Street lights
+for(let x=-360;x<=360;x+=90){
+ for(let z=-360;z<=360;z+=90){
+  box(x+11,4,z+11,.25,8,.25,M(0x303840));
+  box(x+12,8,z+11,2,.25,.7,M(0xffe4a3));
+ }
+}
+
+// Player character
+const player=new THREE.Group();
+const body=new THREE.Mesh(new THREE.CapsuleGeometry(.65,1.05,4,8),M(0x245c9a));
+body.position.y=1.25;player.add(body);
+const head=new THREE.Mesh(new THREE.SphereGeometry(.37,12,10),M(0xb98160));
+head.position.y=2.25;player.add(head);
+player.position.set(-175,0,0);scene.add(player);
+
+// Drivable red car
+const car=new THREE.Group();
+const red=M(0xb52e29),glass=M(0x253e50),black=M(0x15191d);
+const chassis=new THREE.Mesh(new THREE.BoxGeometry(3.2,1.05,5.6),red);
+chassis.position.y=1;car.add(chassis);
+const cabin=new THREE.Mesh(new THREE.BoxGeometry(2.5,1.05,2.7),glass);
+cabin.position.set(0,2,0);car.add(cabin);
+for(const x of [-1.65,1.65])for(const z of [-1.8,1.8]){
+ const wheel=new THREE.Mesh(new THREE.CylinderGeometry(.53,.53,.32,16),black);
+ wheel.rotation.z=Math.PI/2;wheel.position.set(x,.55,z);car.add(wheel);
+}
+car.position.set(-160,0,0);scene.add(car);
+
+// Mission marker at Biswa Bangla Gate
+const marker=new THREE.Group();
+const ring=new THREE.Mesh(new THREE.TorusGeometry(4,.45,10,40),yellow);
+ring.rotation.x=Math.PI/2;ring.position.y=.6;marker.add(ring);
+const beam=new THREE.Mesh(new THREE.CylinderGeometry(.15,.8,9,12,1,true),
+ new THREE.MeshBasicMaterial({color:0xffcf42,transparent:true,opacity:.22}));
+beam.position.y=4.5;marker.add(beam);
+marker.position.set(-125,0,-115);scene.add(marker);
+
+// Input and camera
+const keys={};let driving=false,speed=0,angle=0,camYaw=0,camPitch=.22;
+addEventListener('keydown',e=>{
+ keys[e.key.toLowerCase()]=true;
+ if(e.key.toLowerCase()==='e')toggleCar();
+ if(e.key===' ')e.preventDefault();
+});
+addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
+document.querySelectorAll('[data-k]').forEach(b=>{
+ const k=b.dataset.k;
+ b.addEventListener('pointerdown',e=>{e.preventDefault();keys[k]=true});
+ ['pointerup','pointercancel','pointerleave'].forEach(ev=>b.addEventListener(ev,()=>keys[k]=false));
+});
+document.querySelector('#run').onpointerdown=()=>keys.shift=true;
+document.querySelector('#run').onpointerup=()=>keys.shift=false;
+document.querySelector('#brake').onpointerdown=()=>keys[' ']=true;
+document.querySelector('#brake').onpointerup=()=>keys[' ']=false;
+document.querySelector('#enter').onclick=toggleCar;
+function toggleCar(){
+ if(!driving&&player.position.distanceTo(car.position)<9){driving=true;player.visible=false}
+ else if(driving){driving=false;player.visible=true;player.position.copy(car.position).add(new THREE.Vector3(4,0,0))}
+}
+let drag=false,lx=0,ly=0;
+renderer.domElement.addEventListener('pointerdown',e=>{
+ if(e.pointerType==='touch'||e.pointerType==='mouse'){drag=true;lx=e.clientX;ly=e.clientY}
+});
+addEventListener('pointerup',()=>drag=false);
+addEventListener('pointermove',e=>{
+ if(!drag)return;
+ camYaw-=(e.clientX-lx)*.005;
+ camPitch=Math.max(-.1,Math.min(.75,camPitch+(e.clientY-ly)*.003));
+ lx=e.clientX;ly=e.clientY;
+});
+
+// Minimap
+const mc=document.querySelector('#map').getContext('2d');
+function drawMap(target){
+ mc.fillStyle='#263b35';mc.fillRect(0,0,260,260);
+ mc.fillStyle='#397e9c';mc.fillRect(185,0,17,260);
+ mc.fillStyle='#a6a08f';
+ for(let p=20;p<260;p+=48){mc.fillRect(p,0,4,260);mc.fillRect(0,p,260,4)}
+ mc.fillStyle='#53844e';mc.fillRect(5,180,65,60);
+ mc.fillStyle='#f5d05b';mc.font='bold 12px Arial';
+ mc.fillText('NEW TOWN',8,18);mc.fillText('KESTOPUR',185,18);
+ const p=target.clone();
+ mc.fillStyle='#ff5147';
+ mc.beginPath();mc.arc(130+(p.x/950)*230,130+(p.z/950)*230,5,0,Math.PI*2);mc.fill();
+ mc.fillStyle='#ffe16a';mc.beginPath();mc.arc(130+(-125/950)*230,130+(-115/950)*230,4,0,7);mc.fill();
+}
+const clock=new THREE.Clock();let completed=false;
+function animate(){
+ requestAnimationFrame(animate);
+ const dt=Math.min(clock.getDelta(),.04);
+ const forward=keys.w||keys.arrowup,back=keys.s||keys.arrowdown;
+ const left=keys.a||keys.arrowleft,right=keys.d||keys.arrowright;
+ if(driving){
+  if(forward)speed=Math.min(speed+20*dt,34);
+  else if(back)speed=Math.max(speed-26*dt,-10);
+  else speed*=Math.pow(.96,dt*60);
+  if(keys[' '])speed*=.88;
+  angle+=((left?1:0)-(right?1:0))*dt*1.5*(speed>=0?1:-1);
+  car.rotation.y=angle;
+  car.position.x+=Math.sin(angle)*speed*dt;
+  car.position.z+=Math.cos(angle)*speed*dt;
+ }else{
+  let dx=(right?1:0)-(left?1:0),dz=(back?1:0)-(forward?1:0);
+  if(dx||dz){
+   const v=new THREE.Vector3(dx,0,dz).normalize().applyAxisAngle(new THREE.Vector3(0,1,0),camYaw);
+   player.position.addScaledVector(v,dt*(keys.shift?11:5.5));
+   player.rotation.y=Math.atan2(v.x,v.z);
+  }
+ }
+ const target=driving?car.position:player.position;
+ const dist=driving?15:10;
+ const desired=new THREE.Vector3(
+  target.x+Math.sin(camYaw)*dist,
+  target.y+5+camPitch*8,
+  target.z+Math.cos(camYaw)*dist
+ );
+ camera.position.lerp(desired,1-Math.pow(.001,dt));
+ camera.lookAt(target.x,target.y+1.2,target.z);
+ marker.rotation.y+=dt*.6;
+ marker.position.y=Math.sin(clock.elapsedTime*2)*.25;
+ if(!completed&&target.distanceTo(marker.position)<10){
+  completed=true;
+  document.querySelector('#mission').innerHTML='MISSION COMPLETE!<br><b>Welcome to New Town</b><br>Explore the city!';
+ }
+ const loc=target.x>300?'KESTOPUR':target.x>210?'KESTOPUR CANAL':target.x< -200?'ECO PARK':'NEW TOWN';
+ document.querySelector('#place').textContent=loc+' • KOLKATA';
+ document.querySelector('#stats').innerHTML=(driving?'DRIVING':'WALKING')+'<br>'+Math.round(Math.abs(speed)*3.6)+' km/h';
+ drawMap(target);
+ renderer.render(scene,camera);
+}
+animate();
+addEventListener('resize',()=>{
+ camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();
+ renderer.setSize(innerWidth,innerHeight);
+});
+</script>
+</body>
+</html>
